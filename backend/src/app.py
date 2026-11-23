@@ -2,6 +2,8 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
+from src.egress import people
+
 app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
@@ -38,22 +40,22 @@ def estimate_evacuation(p: EstimateIn):
     T_evac = prep + queue + travel
     latest alert (min after ignition) = T_cut - margin - T_evac
     """
-    cars = p.homes * p.cars_per_home
-    queue_min = cars / (p.capacity_per_hour * p.exits) * 60
-    evac_min = p.prep_min + queue_min + p.travel_min
-    latest_alert_min = p.road_cut_min - p.margin_min - evac_min
-    feasible = latest_alert_min >= 0
-    if feasible:
-        message = (f"Feasible: the alert must go out within {latest_alert_min:.0f} min of ignition "
+    e = people.evacuation_estimate(
+        homes=p.homes, cars_per_home=p.cars_per_home, capacity_per_hour=p.capacity_per_hour,
+        prep_min=p.prep_min, travel_min=p.travel_min, road_cut_min=p.road_cut_min,
+        exits=p.exits, margin_min=p.margin_min,
+    )
+    if e.feasible:
+        message = (f"Feasible: the alert must go out within {e.latest_alert_min:.0f} min of ignition "
                    f"for the last car to pass before the road is cut.")
     else:
-        message = (f"Too late: even an alert at ignition is {-latest_alert_min:.0f} min short. "
+        message = (f"Too late: even an alert at ignition is {-e.latest_alert_min:.0f} min short. "
                    f"Stage the departures, open another exit, or help people leave earlier.")
     return {
-        "cars": round(cars),
-        "queue_min": round(queue_min, 1),
-        "evac_min": round(evac_min, 1),
-        "latest_alert_min": round(latest_alert_min, 1),
-        "feasible": feasible,
+        "cars": round(e.cars),
+        "queue_min": round(e.queue_min, 1),
+        "evac_min": round(e.evac_min, 1),
+        "latest_alert_min": round(e.latest_alert_min, 1),
+        "feasible": e.feasible,
         "message": message,
     }

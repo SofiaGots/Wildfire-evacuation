@@ -12,6 +12,14 @@ dependencies = [
 [project.scripts]
 backend = "backend:main"
 
+[project.optional-dependencies]
+research = [
+    "matplotlib>=3.11.2",
+    "networkx>=3.7",
+    "numpy>=2.5.5",
+    "osmnx>=2.2.0",
+]
+
 [build-system]
 requires = ["uv_build>=0.13.5,<0.14.0"]
 build-backend = "uv_build"
