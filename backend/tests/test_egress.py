@@ -39,6 +39,57 @@ def grid_graph(half=6, spacing_m=1000, kmh=40):
     return G
 
 
+def messy_graph():
+    """Small graph with every kind of road problem: a track, a one-way trap, fast and slow roads."""
+    G = nx.MultiDiGraph()
+    for n in "ABCDEFGH":
+        G.add_node(n, y=LAT0, x=LON0)
+
+    def road(u, v, hw, kmh, length=1000, both=True):
+        G.add_edge(u, v, highway=hw, speed_kph=kmh, length=length, travel_time=length / (kmh / 3.6))
+        if both:
+            G.add_edge(v, u, highway=hw, speed_kph=kmh, length=length, travel_time=length / (kmh / 3.6))
+
+    road("A", "B", "primary", 80)
+    road("B", "C", "secondary", 50)
+    road("C", "D", ["residential", "tertiary"], 30)
+    road("D", "E", "motorway", 100)
+    road("A", "E", "track", 30)                       # a shortcut over an unpaved track
+    road("C", "F", "service", 20)                     # a service road to a node nothing else reaches
+    road("D", "G", "residential", 30, both=False)     # one-way dead end: G cannot get back out
+    G.add_node("H")                                   # no roads at all
+    return G
+
+
+def test_clean_graph_removes_unusable_roads():
+    H = roads.clean_graph(messy_graph())
+    assert "H" not in H and "F" not in H and "G" not in H      # isolated, service-only, one-way trap
+    assert not H.has_edge("A", "E")                            # the track is gone
+    assert set(H.nodes) == {"A", "B", "C", "D", "E"}
+
+
+def test_clean_graph_capacities_and_speeds():
+    G = messy_graph()
+    H = roads.clean_graph(G)
+    assert H["A"]["B"][0]["capacity"] == 1200 and H["B"]["C"][0]["capacity"] == 900
+    assert H["C"]["D"][0]["capacity"] == 500                   # mixed classes: the smaller capacity
+    assert H["D"]["E"][0]["capacity"] == 1800
+    assert H["A"]["B"][0]["speed_kph"] == 40                   # 80 km/h capped to 40
+    assert abs(H["A"]["B"][0]["travel_time"] - 1000 / (40 / 3.6)) < 1e-9
+    assert H["C"]["D"][0]["speed_kph"] == 30                   # slower roads are not sped up
+    assert H["D"]["E"][0]["speed_kph"] == 100                  # motorway keeps its speed
+    assert G["A"]["B"][0]["speed_kph"] == 80                   # the input is untouched
+    assert G.has_edge("A", "E")
+
+
+def test_clean_graph_keeps_a_graph_without_tags():
+    G = grid_graph(half=2)
+    H = roads.clean_graph(G)
+    assert len(H.edges) == len(G.edges)                        # nothing is dropped
+    assert all(d["capacity"] == roads.DEFAULT_CAPACITY for _, _, d in H.edges(data=True))
+    assert H[(0, 0)][(1, 0)][0]["travel_time"] == G[(0, 0)][(1, 0)][0]["travel_time"]   # no length: untouched
+
+
 def test_people_lofou_numbers():
     e = people.evacuation_estimate(187, 1.5, 700, prep_min=30, travel_min=28, road_cut_min=60)
     assert round(e.queue_min, 2) == 24.04

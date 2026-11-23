@@ -14,15 +14,86 @@ import networkx as nx
 import numpy as np
 
 
+# ---------- assumptions (every number here is a placeholder, see ASSUMPTIONS.md) ----------
+
+# Road classes (OSM `highway` tag) that an evacuating car will not be routed over.
+EXCLUDED_CLASSES = {"track", "path", "service", "footway", "cycleway", "bridleway",
+                    "steps", "pedestrian", "corridor", "busway", "bus_guideway"}
+
+# How many cars per hour one road of this class can carry in one direction.
+CAPACITY_PER_HOUR = {
+    "motorway": 1800, "trunk": 1500, "primary": 1200, "secondary": 900,
+    "tertiary": 700, "unclassified": 500, "residential": 500, "living_street": 300,
+}
+DEFAULT_CAPACITY = 500          # a class that is not in the table
+
+# Winding mountain roads in smoke are slower than the posted limit.
+SPEED_CAP_KMH = 40.0
+UNCAPPED_CLASSES = {"motorway", "trunk"}    # fast roads keep their own speed
+
+
+def road_class(highway):
+    """Main OSM road class as a string. `highway` may be a list; 'primary_link' counts as 'primary'."""
+    values = highway if isinstance(highway, (list, tuple)) else [highway]
+    return [str(v).removesuffix("_link") for v in values if v is not None]
+
+
+def edge_capacity(highway):
+    """Cars per hour for an edge. If the edge has several classes, the smallest capacity counts."""
+    classes = road_class(highway)
+    if not classes:
+        return DEFAULT_CAPACITY
+    return min(CAPACITY_PER_HOUR.get(c, DEFAULT_CAPACITY) for c in classes)
+
+
+def is_excluded(highway):
+    """True if every class of the edge is one cars should not use (e.g. only 'track')."""
+    classes = road_class(highway)
+    return bool(classes) and all(c in EXCLUDED_CLASSES for c in classes)
+
+
+def clean_graph(G, speed_cap_kmh=SPEED_CAP_KMH):
+    """A cleaned copy of the road graph, ready for evacuation routing.
+
+    1. Drops tracks, paths, service roads and the like.
+    2. Keeps only the biggest part of the network that is strongly connected, so a car can
+       get from any node to any other (this removes dead-end pockets and one-way traps).
+    3. Puts `capacity` (cars per hour) on every edge, by road class.
+    4. Caps speed at speed_cap_kmh on ordinary roads and recomputes `travel_time` (seconds).
+    The input graph is not changed.
+    """
+    H = G.copy()
+    H.remove_edges_from([(u, v, k) for u, v, k, d in H.edges(keys=True, data=True)
+                         if is_excluded(d.get("highway"))])
+    H.remove_nodes_from(list(nx.isolates(H)))
+    if len(H):
+        biggest = max(nx.strongly_connected_components(H), key=len)
+        H = H.subgraph(biggest).copy()
+
+    for u, v, k, d in H.edges(keys=True, data=True):
+        d["capacity"] = edge_capacity(d.get("highway"))
+        if "length" in d:
+            kmh = d.get("speed_kph", speed_cap_kmh)
+            classes = road_class(d.get("highway"))
+            if not (classes and all(c in UNCAPPED_CLASSES for c in classes)):
+                kmh = min(kmh, speed_cap_kmh)
+            d["speed_kph"] = kmh
+            d["travel_time"] = d["length"] / (kmh / 3.6)
+    return H
+
+
 # ---------- getting the graph ----------
 
-def load_graph(lat, lon, dist=18000, network_type="drive"):
-    """Download the road graph around a point from OpenStreetMap (needs osmnx and internet)."""
+def load_graph(lat, lon, dist=18000, network_type="drive", clean=True):
+    """Download the road graph around a point from OpenStreetMap (needs osmnx and internet).
+
+    With clean=True the graph goes through clean_graph (no tracks, capacities, speed cap).
+    """
     import osmnx as ox
     G = ox.graph_from_point((lat, lon), dist=dist, network_type=network_type)
     G = ox.routing.add_edge_speeds(G)
     G = ox.routing.add_edge_travel_times(G)
-    return G
+    return clean_graph(G) if clean else G
 
 
 def nearest_node(G, lat, lon):
