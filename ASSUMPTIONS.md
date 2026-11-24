@@ -5,7 +5,7 @@ by a real source or kept with an honest range. Change a number in code → chang
 
 | # | Assumption | Value now | Where | Why it matters | How to improve |
 |---|------------|-----------|-------|----------------|----------------|
-| 1 | Minutes per fire step | 2.0 | `fire.py` (`min_per_step`) | Scales every fire arrival time | Calibrate against a real fire (e.g. Solea 2025 burned area and times) |
+| 1 | Minutes per fire step | 2.0 | `fire.py` (`min_per_step`) | Scales every fire arrival time | Calibrate against the July 2025 Limassol fire (burned area and front times) |
 | 2 | Fuel layout | random, 85 % density | `fire.random_fuel` | Fire spread and road cuts | Use real vegetation (CORINE land cover) |
 | 3 | Terrain / slope | ignored | `fire.py` | Fire runs much faster uphill | Add elevation (SRTM) |
 | 4 | Road classes cars may use | not track, path, service, footway, cycleway, bridleway, steps, pedestrian | `roads.EXCLUDED_CLASSES` | A village connected only by an unpaved road looks cut off | Check each village on a map |

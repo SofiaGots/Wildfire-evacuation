@@ -33,7 +33,7 @@ UNCAPPED_CLASSES = {"motorway", "trunk"}    # fast roads keep their own speed
 
 
 def road_class(highway):
-    """Main OSM road class as a string. `highway` may be a list; 'primary_link' counts as 'primary'."""
+    """List of OSM road classes (strings). `highway` may be one value or a list; 'primary_link' counts as 'primary'."""
     values = highway if isinstance(highway, (list, tuple)) else [highway]
     return [str(v).removesuffix("_link") for v in values if v is not None]
 
